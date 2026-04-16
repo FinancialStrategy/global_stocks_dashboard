@@ -1,6 +1,7 @@
 """
 Portfolio Optimization Module with PyPortfolioOpt
 Professional portfolio optimization and efficient frontier
+FIXED: Removed matplotlib style dependency
 """
 
 import pandas as pd
@@ -10,15 +11,22 @@ import plotly.express as px
 import plotly.graph_objects as go
 from typing import Dict, Optional, Tuple
 
-# PyPortfolioOpt imports
+# PyPortfolioOpt imports with error handling
 try:
     from pypfopt import expected_returns, risk_models
-    from pypfopt import EfficientFrontier, objective_functions
-    from pypfopt import plotting
+    from pypfopt import EfficientFrontier
     PYPFOPT_AVAILABLE = True
 except ImportError:
     PYPFOPT_AVAILABLE = False
-    print("PyPortfolioOpt not available")
+    st.warning("PyPortfolioOpt not available. Install with: pip install PyPortfolioOpt")
+
+# Fix matplotlib style issue - suppress warnings
+import warnings
+warnings.filterwarnings('ignore')
+
+# Disable matplotlib style loading
+import matplotlib
+matplotlib.use('Agg')  # Use non-interactive backend
 
 
 class PortfolioOptimizer:
@@ -38,9 +46,14 @@ class PortfolioOptimizer:
             self.mu = None
             self.S = None
         else:
-            # Calculate expected returns and covariance matrix
-            self.mu = expected_returns.mean_historical_return(self.prices)
-            self.S = risk_models.sample_cov(self.prices)
+            try:
+                # Calculate expected returns and covariance matrix
+                self.mu = expected_returns.mean_historical_return(self.prices)
+                self.S = risk_models.sample_cov(self.prices)
+            except Exception as e:
+                st.error(f"Error calculating returns/covariance: {e}")
+                self.mu = None
+                self.S = None
     
     def optimize_max_sharpe(self) -> Dict:
         """Optimize for maximum Sharpe ratio"""
@@ -167,7 +180,7 @@ class PortfolioOptimizer:
             'status': 'failed'
         }
     
-    def get_efficient_frontier_points(self, points: int = 50) -> pd.DataFrame:
+    def get_efficient_frontier_points(self, points: int = 30) -> pd.DataFrame:
         """Generate efficient frontier points"""
         if self.mu is None or self.S is None:
             return pd.DataFrame()
@@ -177,7 +190,10 @@ class PortfolioOptimizer:
             min_return = self.mu.min()
             max_return = self.mu.max()
             
-            for target_return in np.linspace(min_return, max_return, points):
+            # Use fewer points for stability
+            targets = np.linspace(min_return, max_return, min(points, 30))
+            
+            for target_return in targets:
                 try:
                     ef = EfficientFrontier(self.mu, self.S)
                     ef.add_constraint(lambda w: w >= 0)
@@ -186,7 +202,6 @@ class PortfolioOptimizer:
                     frontiers.append({
                         'return': ret,
                         'volatility': vol,
-                        'sharpe': ret / vol if vol > 0 else 0
                     })
                 except:
                     continue
@@ -200,22 +215,21 @@ class PortfolioOptimizer:
         """Create interactive efficient frontier plot"""
         ef_points = self.get_efficient_frontier_points()
         
-        if ef_points.empty:
-            return go.Figure()
-        
         fig = go.Figure()
         
         # Efficient frontier line
-        fig.add_trace(go.Scatter(
-            x=ef_points['volatility'],
-            y=ef_points['return'],
-            mode='lines',
-            name='Efficient Frontier',
-            line=dict(color='blue', width=2)
-        ))
+        if not ef_points.empty:
+            fig.add_trace(go.Scatter(
+                x=ef_points['volatility'],
+                y=ef_points['return'],
+                mode='lines+markers',
+                name='Efficient Frontier',
+                line=dict(color='blue', width=2),
+                marker=dict(size=4)
+            ))
         
         # Individual assets
-        if self.mu is not None:
+        if self.mu is not None and self.S is not None:
             asset_volatilities = np.sqrt(np.diag(self.S))
             
             fig.add_trace(go.Scatter(
@@ -223,9 +237,10 @@ class PortfolioOptimizer:
                 y=self.mu.values,
                 mode='markers',
                 name='Individual Assets',
-                marker=dict(size=10, color='red', symbol='circle'),
+                marker=dict(size=12, color='red', symbol='circle'),
                 text=self.mu.index,
-                textposition='top center'
+                textposition='top center',
+                hovertemplate='<b>%{text}</b><br>Return: %{y:.2%}<br>Risk: %{x:.2%}<extra></extra>'
             ))
         
         fig.update_layout(
@@ -255,7 +270,8 @@ class PortfolioOptimizer:
         # Optimization strategy selection
         strategy = st.selectbox(
             "🎯 Optimization Strategy",
-            ["Max Sharpe Ratio", "Min Volatility", "Max Quadratic Utility"]
+            ["Max Sharpe Ratio", "Min Volatility", "Max Quadratic Utility"],
+            help="Choose the optimization objective"
         )
         
         if strategy == "Max Sharpe Ratio":
@@ -266,7 +282,7 @@ class PortfolioOptimizer:
             risk_aversion = st.slider("⚡ Risk Aversion Parameter", 1.0, 10.0, 3.0, 0.5)
             result = self.optimize_max_quadratic_utility(risk_aversion)
         
-        if result['status'] == 'success':
+        if result['status'] == 'success' and result['weights']:
             with col1:
                 st.metric("📈 Expected Annual Return", f"{result['expected_return']:.2%}")
             with col2:
@@ -275,26 +291,26 @@ class PortfolioOptimizer:
                 st.metric("🎯 Sharpe Ratio", f"{result['sharpe_ratio']:.3f}")
             
             # Weight distribution
-            if result['weights']:
-                st.subheader("💰 Optimal Portfolio Weights")
-                
-                weights_df = pd.DataFrame.from_dict(
-                    result['weights'], 
-                    orient='index', 
-                    columns=['Weight']
-                ).sort_values('Weight', ascending=False)
-                
-                # Filter weights > 0.01 for display
-                weights_df = weights_df[weights_df['Weight'] > 0.01]
-                
+            st.subheader("💰 Optimal Portfolio Weights")
+            
+            weights_df = pd.DataFrame.from_dict(
+                result['weights'], 
+                orient='index', 
+                columns=['Weight']
+            ).sort_values('Weight', ascending=False)
+            
+            # Filter weights > 0.01 for display
+            weights_df_display = weights_df[weights_df['Weight'] > 0.01].copy()
+            
+            if not weights_df_display.empty:
                 fig = px.bar(
-                    weights_df,
-                    x=weights_df.index,
+                    weights_df_display,
+                    x=weights_df_display.index,
                     y='Weight',
                     title='Portfolio Allocation',
                     color='Weight',
                     color_continuous_scale='Viridis',
-                    text=weights_df['Weight'].apply(lambda x: f'{x:.1%}')
+                    text=weights_df_display['Weight'].apply(lambda x: f'{x:.1%}')
                 )
                 fig.update_layout(
                     xaxis_title="Asset",
@@ -314,8 +330,10 @@ class PortfolioOptimizer:
                     file_name='portfolio_weights.csv',
                     mime='text/csv'
                 )
+            else:
+                st.info("No significant weights to display")
         else:
-            st.error("❌ Optimization failed. Please try different parameters.")
+            st.error("❌ Optimization failed. Please try different parameters or select different assets.")
         
         return result
 
@@ -336,7 +354,9 @@ def calculate_portfolio_statistics(returns: pd.DataFrame, weights: Dict) -> Dict
     
     # Convert weights to Series
     weight_series = pd.Series(weights)
-    weight_series = weight_series / weight_series.sum()  # Normalize
+    weight_sum = weight_series.sum()
+    if weight_sum > 0:
+        weight_series = weight_series / weight_sum  # Normalize
     
     # Align returns and weights
     common_tickers = [t for t in weight_series.index if t in returns.columns]
