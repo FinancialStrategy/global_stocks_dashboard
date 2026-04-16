@@ -1,6 +1,6 @@
 """
-Risk Analytics Module with QuantStats
-Professional risk metrics and performance analysis
+Risk Analytics Module - NO QuantStats Required
+Professional risk metrics and performance analysis with manual calculations
 """
 
 import pandas as pd
@@ -10,9 +10,11 @@ import plotly.graph_objects as go
 from plotly.subplots import make_subplots
 import plotly.express as px
 from typing import Dict, Optional
+from datetime import datetime
+
 
 class RiskAnalyzer:
-    """Professional risk analysis using QuantStats"""
+    """Professional risk analysis - No external dependencies"""
     
     def __init__(self, returns: pd.Series, benchmark_returns: pd.Series = None):
         """
@@ -32,12 +34,17 @@ class RiskAnalyzer:
         
         # Basic returns
         total_return = (1 + self.returns).prod() - 1
-        annual_return = (1 + total_return) ** (252 / len(self.returns)) - 1
         
         # Calculate CAGR
         days = len(self.returns)
         years = days / 252
         cagr = (1 + total_return) ** (1 / years) - 1 if years > 0 else 0
+        
+        # Annual return
+        annual_return = (1 + total_return) ** (252 / days) - 1 if days > 0 else 0
+        
+        # Monthly returns
+        monthly_returns = self.returns.resample('M').apply(lambda x: (1 + x).prod() - 1)
         
         return {
             'Total Return': total_return,
@@ -49,7 +56,9 @@ class RiskAnalyzer:
             'Worst Day': self.returns.min(),
             'Positive Days': (self.returns > 0).sum(),
             'Negative Days': (self.returns < 0).sum(),
-            'Win Rate': (self.returns > 0).sum() / len(self.returns)
+            'Win Rate': (self.returns > 0).sum() / len(self.returns),
+            'Best Month': monthly_returns.max() if not monthly_returns.empty else 0,
+            'Worst Month': monthly_returns.min() if not monthly_returns.empty else 0
         }
     
     def calculate_risk_metrics(self) -> Dict:
@@ -68,20 +77,34 @@ class RiskAnalyzer:
         max_drawdown = drawdown.min()
         
         # Find max drawdown period
-        drawdown_start = drawdown[drawdown == 0].index
-        drawdown_end = drawdown[drawdown == max_drawdown].index
-        max_dd_duration = None
+        drawdown_start = None
+        drawdown_end = None
+        in_drawdown = False
         
-        if len(drawdown_start) > 0 and len(drawdown_end) > 0:
-            max_dd_duration = (drawdown_end[0] - drawdown_start[-1]).days
+        for i in range(len(drawdown)):
+            if drawdown.iloc[i] == 0 and not in_drawdown:
+                in_drawdown = True
+                drawdown_start = drawdown.index[i]
+            elif drawdown.iloc[i] < 0 and in_drawdown and drawdown.iloc[i] == max_drawdown:
+                drawdown_end = drawdown.index[i]
+                break
+        
+        max_dd_duration = None
+        if drawdown_start and drawdown_end:
+            max_dd_duration = (drawdown_end - drawdown_start).days
         
         # VaR and CVaR
         var_95 = self.returns.quantile(0.05)
+        var_99 = self.returns.quantile(0.01)
         cvar_95 = self.returns[self.returns <= var_95].mean()
         
         # Downside metrics
         negative_returns = self.returns[self.returns < 0]
         downside_deviation = negative_returns.std() if len(negative_returns) > 0 else daily_vol
+        
+        # Semi-deviation (downside volatility)
+        below_mean = self.returns[self.returns < self.returns.mean()]
+        semi_deviation = below_mean.std() if len(below_mean) > 0 else daily_vol
         
         return {
             'Daily Volatility': daily_vol,
@@ -89,8 +112,10 @@ class RiskAnalyzer:
             'Max Drawdown': max_drawdown,
             'Max Drawdown Duration (Days)': max_dd_duration,
             'Value at Risk (95%)': var_95,
+            'Value at Risk (99%)': var_99,
             'Conditional VaR (95%)': cvar_95,
-            'Downside Deviation': downside_deviation
+            'Downside Deviation': downside_deviation,
+            'Semi-Deviation': semi_deviation
         }
     
     def calculate_risk_adjusted_metrics(self) -> Dict:
@@ -108,9 +133,8 @@ class RiskAnalyzer:
         excess_returns = self.returns - daily_rf
         sharpe = (excess_returns.mean() / self.returns.std() * np.sqrt(252)) if self.returns.std() != 0 else 0
         
-        # Sortino Ratio
-        negative_returns = self.returns[self.returns < 0]
-        downside_std = negative_returns.std() if len(negative_returns) > 0 else self.returns.std()
+        # Sortino Ratio (using downside deviation)
+        downside_std = metrics['Downside Deviation']
         sortino = (excess_returns.mean() / downside_std * np.sqrt(252)) if downside_std != 0 else 0
         
         # Calmar Ratio
@@ -122,13 +146,40 @@ class RiskAnalyzer:
         losses = abs(self.returns[self.returns < threshold].sum())
         omega = gains / losses if losses != 0 else float('inf')
         
+        # Treynor Ratio (needs beta, will calculate if benchmark exists)
+        treynor = None
+        if self.benchmark is not None:
+            beta = self.calculate_beta()
+            if beta > 0:
+                treynor = (returns_metrics['Annual Return'] - risk_free_rate) / beta
+        
         return {
             'Sharpe Ratio': sharpe,
             'Sortino Ratio': sortino,
             'Calmar Ratio': calmar,
             'Omega Ratio': omega,
+            'Treynor Ratio': treynor,
             'Risk-Free Rate': risk_free_rate
         }
+    
+    def calculate_beta(self) -> float:
+        """Calculate beta against benchmark"""
+        if self.benchmark is None or self.benchmark.empty:
+            return 1.0
+        
+        # Align returns
+        common_idx = self.returns.index.intersection(self.benchmark.index)
+        if len(common_idx) < 2:
+            return 1.0
+        
+        portfolio_returns = self.returns[common_idx]
+        benchmark_returns = self.benchmark[common_idx]
+        
+        covariance = portfolio_returns.cov(benchmark_returns)
+        benchmark_variance = benchmark_returns.var()
+        beta = covariance / benchmark_variance if benchmark_variance != 0 else 1
+        
+        return beta
     
     def calculate_market_metrics(self) -> Dict:
         """Calculate market-relative metrics (requires benchmark)"""
@@ -143,15 +194,17 @@ class RiskAnalyzer:
         portfolio_returns = self.returns[common_idx]
         benchmark_returns = self.benchmark[common_idx]
         
-        # Beta and Alpha
-        covariance = portfolio_returns.cov(benchmark_returns)
-        benchmark_variance = benchmark_returns.var()
-        beta = covariance / benchmark_variance if benchmark_variance != 0 else 1
+        # Beta
+        beta = self.calculate_beta()
         
         # Alpha (using CAPM)
         risk_free_rate = 0.02 / 252  # Daily risk-free rate
-        expected_return = risk_free_rate + beta * (benchmark_returns.mean() - risk_free_rate)
-        alpha = (portfolio_returns.mean() - expected_return) * 252
+        portfolio_mean = portfolio_returns.mean()
+        benchmark_mean = benchmark_returns.mean()
+        
+        expected_return = risk_free_rate + beta * (benchmark_mean - risk_free_rate)
+        alpha_daily = portfolio_mean - expected_return
+        alpha_annual = alpha_daily * 252
         
         # R-squared
         correlation = portfolio_returns.corr(benchmark_returns)
@@ -161,14 +214,25 @@ class RiskAnalyzer:
         tracking_error = (portfolio_returns - benchmark_returns).std() * np.sqrt(252)
         
         # Information ratio
-        information_ratio = (portfolio_returns.mean() - benchmark_returns.mean()) / (portfolio_returns - benchmark_returns).std() * np.sqrt(252) if (portfolio_returns - benchmark_returns).std() != 0 else 0
+        active_return = portfolio_returns - benchmark_returns
+        information_ratio = (active_return.mean() / active_return.std() * np.sqrt(252)) if active_return.std() != 0 else 0
+        
+        # Up/Down capture
+        up_months = benchmark_returns[benchmark_returns > 0]
+        down_months = benchmark_returns[benchmark_returns < 0]
+        
+        up_capture = (portfolio_returns[benchmark_returns > 0].mean() / up_months.mean()) if len(up_months) > 0 and up_months.mean() != 0 else 1
+        down_capture = (portfolio_returns[benchmark_returns < 0].mean() / down_months.mean()) if len(down_months) > 0 and down_months.mean() != 0 else 1
         
         return {
             'Beta': beta,
-            'Alpha (Annual)': alpha,
+            'Alpha (Daily)': alpha_daily,
+            'Alpha (Annual)': alpha_annual,
             'R-Squared': r_squared,
             'Tracking Error': tracking_error,
-            'Information Ratio': information_ratio
+            'Information Ratio': information_ratio,
+            'Up Capture Ratio': up_capture,
+            'Down Capture Ratio': down_capture
         }
     
     def get_complete_metrics(self) -> Dict:
@@ -225,7 +289,8 @@ class RiskAnalyzer:
         
         with col3:
             st.metric("🏆 Calmar Ratio", f"{metrics.get('Calmar Ratio', 0):.3f}")
-            st.metric("🔄 Omega Ratio", f"{metrics.get('Omega Ratio', 0):.3f}")
+            if 'Omega Ratio' in metrics and metrics['Omega Ratio'] != float('inf'):
+                st.metric("🔄 Omega Ratio", f"{metrics['Omega Ratio']:.3f}")
         
         with col4:
             st.metric("📈 Best Day", f"{metrics.get('Best Day', 0):.2%}")
@@ -246,7 +311,7 @@ class RiskAnalyzer:
         
         # Calculate rolling metrics
         rolling_sharpe = self.returns.rolling(window).apply(
-            lambda x: (x.mean() / x.std() * np.sqrt(252)) if x.std() != 0 else 0
+            lambda x: (x.mean() / x.std() * np.sqrt(252)) if x.std() != 0 and x.std() is not None else 0
         )
         rolling_vol = self.returns.rolling(window).std() * np.sqrt(252)
         rolling_returns = self.returns.rolling(window).apply(lambda x: (1 + x).prod() - 1)
@@ -263,7 +328,7 @@ class RiskAnalyzer:
                 subset = aligned.iloc[i-window:i]
                 cov = subset['portfolio'].cov(subset['benchmark'])
                 var = subset['benchmark'].var()
-                rolling_beta.iloc[i] = cov / var if var != 0 else 1
+                rolling_beta.iloc[i] = cov / var if var != 0 and cov is not None else 1
         
         # Add traces
         fig.add_trace(go.Scatter(x=rolling_sharpe.index, y=rolling_sharpe, 
@@ -348,7 +413,7 @@ class RiskAnalyzer:
             color_continuous_scale="RdYlGn",
             title="Monthly Returns (%)",
             labels={"x": "Month", "y": "Year", "color": "Return (%)"},
-            zmin=-10, zmax=10
+            zmin=-15, zmax=15
         )
         
         fig.update_layout(height=500, template='plotly_white')
