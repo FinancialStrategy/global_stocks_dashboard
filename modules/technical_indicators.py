@@ -1,25 +1,24 @@
 """
 Technical Indicators Module with TA-Lib Integration
+FIXED: make_subplots import issue resolved
 """
 
 import pandas as pd
 import numpy as np
 import talib
 import plotly.graph_objects as go
-from plotly.subplots import make_subplots  # ✅ FIXED: Import eklendi
-from typing import Dict, Optional
+from typing import Dict
+
+# Safe import for make_subplots
+try:
+    from plotly.subplots import make_subplots
+except ImportError:
+    import plotly.subplots as sp
+    make_subplots = sp.make_subplots
 
 def add_technical_indicators(df: pd.DataFrame, indicator_config: Dict) -> pd.DataFrame:
     """
     TA-Lib kullanarak teknik indikatörleri hesaplar
-    
-    Supported Indicators:
-    - SMA (Simple Moving Average)
-    - EMA (Exponential Moving Average)
-    - RSI (Relative Strength Index)
-    - MACD (Moving Average Convergence Divergence)
-    - Bollinger Bands
-    - ATR (Average True Range)
     """
     df_copy = df.copy()
     
@@ -28,7 +27,6 @@ def add_technical_indicators(df: pd.DataFrame, indicator_config: Dict) -> pd.Dat
     missing_cols = [col for col in required_cols if col not in df_copy.columns]
     
     if missing_cols:
-        # Try to create missing columns from Close price
         for col in missing_cols:
             if col == 'Volume':
                 df_copy[col] = 0
@@ -37,26 +35,26 @@ def add_technical_indicators(df: pd.DataFrame, indicator_config: Dict) -> pd.Dat
             else:
                 raise ValueError(f"Missing required column: {col}")
     
-    # Convert to numeric and handle NaN
+    # Convert to numeric
     for col in ['Open', 'High', 'Low', 'Close']:
         df_copy[col] = pd.to_numeric(df_copy[col], errors='coerce')
     
-    # SMA (Simple Moving Average)
+    # SMA
     if indicator_config.get('sma', False):
         df_copy['SMA_20'] = talib.SMA(df_copy['Close'], timeperiod=20)
         df_copy['SMA_50'] = talib.SMA(df_copy['Close'], timeperiod=50)
         df_copy['SMA_200'] = talib.SMA(df_copy['Close'], timeperiod=200)
     
-    # EMA (Exponential Moving Average)
+    # EMA
     if indicator_config.get('ema', False):
         df_copy['EMA_12'] = talib.EMA(df_copy['Close'], timeperiod=12)
         df_copy['EMA_26'] = talib.EMA(df_copy['Close'], timeperiod=26)
     
-    # RSI (Relative Strength Index)
+    # RSI
     if indicator_config.get('rsi', False):
         df_copy['RSI_14'] = talib.RSI(df_copy['Close'], timeperiod=14)
     
-    # MACD (Moving Average Convergence Divergence)
+    # MACD
     if indicator_config.get('macd', False):
         macd, signal, hist = talib.MACD(
             df_copy['Close'], 
@@ -81,7 +79,7 @@ def add_technical_indicators(df: pd.DataFrame, indicator_config: Dict) -> pd.Dat
         df_copy['BB_Middle'] = middle
         df_copy['BB_Lower'] = lower
     
-    # ATR (Average True Range)
+    # ATR
     if indicator_config.get('atr', False):
         df_copy['ATR_14'] = talib.ATR(
             df_copy['High'], 
@@ -136,12 +134,6 @@ def create_candlestick_with_indicators(df: pd.DataFrame, ticker: str, indicators
                       line=dict(color='red', width=1.5)),
             row=1, col=1
         )
-    if 'EMA_12' in df.columns and not df['EMA_12'].isna().all():
-        fig.add_trace(
-            go.Scatter(x=df.index, y=df['EMA_12'], name='EMA 12', 
-                      line=dict(color='green', width=1.5, dash='dash')),
-            row=1, col=1
-        )
     
     # Bollinger Bands
     if 'BB_Upper' in df.columns and not df['BB_Upper'].isna().all():
@@ -194,7 +186,7 @@ def create_candlestick_with_indicators(df: pd.DataFrame, ticker: str, indicators
     fig.update_layout(
         title=f'{ticker} - Interactive Technical Analysis',
         xaxis_title='Date',
-        yaxis_title='Price (USD/TRY/EUR)',
+        yaxis_title='Price',
         height=800,
         template='plotly_white',
         hovermode='x unified',
