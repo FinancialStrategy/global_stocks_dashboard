@@ -2,18 +2,7 @@
 Global Equity Analytics Platform
 Professional Multi-Market Portfolio Analysis Dashboard
 """
-# app.py - en üst satırlara ekleyin
-import sys
-import warnings
-warnings.filterwarnings('ignore')
 
-# TA-Lib kontrolü - eğer yoksa hata vermesin
-try:
-    import talib
-    TA_LIB_AVAILABLE = True
-except ImportError:
-    TA_LIB_AVAILABLE = False
-    print("TA-Lib not available, using manual implementations")
 import streamlit as st
 import pandas as pd
 import numpy as np
@@ -22,72 +11,82 @@ import yaml
 import plotly.express as px
 import plotly.graph_objects as go
 
-# Page configuration MUST be first Streamlit command
+# Page configuration
 st.set_page_config(
-    page_title="Global Equity Analytics Platform",
-    page_icon="🌍",
+    page_title="Global Equity Analytics",
+    page_icon="📊",
     layout="wide",
     initial_sidebar_state="expanded"
 )
 
-# Load custom CSS
-try:
-    with open('assets/style.css') as f:
-        st.markdown(f'<style>{f.read()}</style>', unsafe_allow_html=True)
-except FileNotFoundError:
-    st.markdown("""
-    <style>
-    .stMetric { background-color: #F8F9FA; border-radius: 10px; padding: 1rem; }
-    </style>
-    """, unsafe_allow_html=True)
+# Simple custom CSS
+st.markdown("""
+<style>
+.stMetric {
+    background-color: #F8F9FA;
+    border-radius: 8px;
+    padding: 1rem;
+    box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+}
+h1 {
+    color: #1E3A5F;
+    font-size: 1.8rem;
+}
+.stTabs [data-baseweb="tab-list"] {
+    gap: 1rem;
+}
+.stTabs [data-baseweb="tab"] {
+    border-radius: 6px;
+    padding: 0.5rem 1rem;
+}
+.stTabs [aria-selected="true"] {
+    background-color: #2E86C1;
+    color: white;
+}
+</style>
+""", unsafe_allow_html=True)
 
 # Title
-st.title("🌍 Global Equity Analytics Platform")
-st.markdown("""
-*Professional Multi-Market Portfolio Analysis | Powered by FinQuant, PyPortfolioOpt, QuantStats & TA-Lib*
-""")
-st.markdown("---")
+st.title("📊 Global Equity Analytics")
 
 # Sidebar Configuration
-st.sidebar.header("⚙️ Configuration")
+st.sidebar.header("Configuration")
 
 # Load config
 try:
     with open('config.yaml', 'r', encoding='utf-8') as f:
         config = yaml.safe_load(f)
 except FileNotFoundError:
-    st.error("❌ config.yaml file not found! Please ensure the file exists.")
+    st.error("config.yaml file not found")
     st.stop()
 
 # Market selection
 available_markets = list(config.get('indices', {}).keys())
 if not available_markets:
-    st.error("❌ No markets found in config.yaml!")
+    st.error("No markets found in config.yaml")
     st.stop()
 
 selected_markets = st.sidebar.multiselect(
-    "🌍 Select Global Markets",
+    "Select Markets",
     options=available_markets,
-    default=available_markets[:3] if len(available_markets) >= 3 else available_markets
+    default=available_markets[:2] if len(available_markets) >= 2 else available_markets
 )
 
 # Date range
 end_date = datetime.now().date()
-default_days = config.get('settings', {}).get('default_period_days', 730)
-start_date = end_date - timedelta(days=default_days)
+start_date = end_date - timedelta(days=730)
 
 col1, col2 = st.sidebar.columns(2)
 with col1:
-    start_date = st.date_input("📅 Start Date", start_date, max_value=end_date)
+    start_date = st.date_input("Start Date", start_date, max_value=end_date)
 with col2:
-    end_date = st.date_input("📅 End Date", end_date, max_value=end_date)
+    end_date = st.date_input("End Date", end_date, max_value=end_date)
 
-# Validate date range
 if start_date >= end_date:
-    st.sidebar.error("❌ End date must be after start date!")
+    st.sidebar.error("End date must be after start date")
 
-# Ticker selection per market
-st.sidebar.subheader("📊 Stock Selection")
+# Stock selection
+st.sidebar.subheader("Stock Selection")
 selected_tickers = {}
 total_selected = 0
 
@@ -96,34 +95,28 @@ for market in selected_markets:
     market_tickers = market_config.get('tickers', [])
     
     if market_tickers:
-        with st.sidebar.expander(f"{market} Market ({market_config.get('currency', 'USD')})"):
+        with st.sidebar.expander(f"{market}"):
             selected = st.multiselect(
-                f"Select {market} stocks",
+                f"Select stocks",
                 options=market_tickers,
-                default=market_tickers[:5] if len(market_tickers) >= 5 else market_tickers,
+                default=market_tickers[:3] if len(market_tickers) >= 3 else market_tickers,
                 key=f"{market}_selector"
             )
             if selected:
                 selected_tickers[market] = selected
                 total_selected += len(selected)
 
-# Supertrend Configuration in Sidebar
+# Supertrend settings
 st.sidebar.markdown("---")
-st.sidebar.subheader("🟢 Supertrend Strategy")
-enable_supertrend = st.sidebar.checkbox("Enable Supertrend Analysis", value=True)
+st.sidebar.subheader("Supertrend")
+enable_supertrend = st.sidebar.checkbox("Enable Supertrend", value=True)
 
 if enable_supertrend:
-    st.sidebar.markdown("**Indicator Parameters:**")
-    supertrend_period = st.sidebar.slider("ATR Period", 5, 20, 10, 
-                                         help="ATR hesaplama periyodu - Düşük değer daha hassas")
-    supertrend_multiplier = st.sidebar.slider("ATR Multiplier", 1.0, 5.0, 3.0, 0.5,
-                                             help="ATR çarpanı - Yüksek değer daha az sinyal")
-    
-    st.sidebar.markdown("**Scan Settings:**")
-    scan_all_stocks = st.sidebar.checkbox("Scan All Selected Stocks", value=True)
+    supertrend_period = st.sidebar.slider("ATR Period", 5, 20, 10)
+    supertrend_multiplier = st.sidebar.slider("ATR Multiplier", 1.0, 5.0, 3.0, 0.5)
 
 # Run button
-if st.sidebar.button("🚀 Run Analysis", type="primary", use_container_width=True):
+if st.sidebar.button("Run Analysis", type="primary", use_container_width=True):
     st.session_state['run_analysis'] = True
     st.session_state['selected_markets'] = selected_markets
     st.session_state['selected_tickers'] = selected_tickers
@@ -132,24 +125,13 @@ if st.sidebar.button("🚀 Run Analysis", type="primary", use_container_width=Tr
     st.session_state['supertrend_params'] = {
         'enabled': enable_supertrend,
         'period': supertrend_period if enable_supertrend else 10,
-        'multiplier': supertrend_multiplier if enable_supertrend else 3.0,
-        'scan_all': scan_all_stocks if enable_supertrend else False
+        'multiplier': supertrend_multiplier if enable_supertrend else 3.0
     }
 
-# Main content area
+# Main content
 if st.session_state.get('run_analysis', False):
-    # Import modules
-    from modules.data_loader import fetch_market_data, get_benchmark_data, load_config
-    from modules.technical_indicators import add_technical_indicators, create_candlestick_with_indicators
+    from modules.data_loader import fetch_market_data, get_benchmark_data
     
-    # Import portfolio modules
-    from modules.portfolio_optimizer import PortfolioOptimizer
-    from modules.risk_metrics import RiskAnalyzer
-    
-    # Import quantstats
-    import quantstats as qs
-    
-    # Get parameters
     selected_markets = st.session_state['selected_markets']
     selected_tickers_dict = st.session_state['selected_tickers']
     start_date = st.session_state['start_date']
@@ -157,16 +139,14 @@ if st.session_state.get('run_analysis', False):
     supertrend_params = st.session_state['supertrend_params']
     
     if total_selected == 0:
-        st.warning("⚠️ Please select at least one stock from the sidebar to begin the analysis.")
+        st.warning("Please select at least one stock")
         st.stop()
     
-    # Data loading
-    st.info(f"📥 Loading data for {total_selected} stocks across {len(selected_markets)} markets...")
+    # Load data
+    st.info(f"Loading data for {total_selected} stocks...")
     
     all_prices = {}
-    all_returns = {}
-    all_ohlc_data = {}  # For Supertrend analysis
-    
+    all_ohlc_data = {}
     progress_bar = st.progress(0)
     
     for idx, market in enumerate(selected_markets):
@@ -174,438 +154,263 @@ if st.session_state.get('run_analysis', False):
             tickers = selected_tickers_dict[market]
             progress_bar.progress((idx + 0.5) / len(selected_markets))
             
-            # Fetch data
             ticker_data = fetch_market_data(tickers, str(start_date), str(end_date))
             
             if ticker_data:
-                # Extract close prices for each ticker
                 close_prices = {}
                 for ticker, df in ticker_data.items():
                     if 'Close' in df.columns:
                         close_prices[ticker] = df['Close']
-                    else:
-                        close_prices[ticker] = df.iloc[:, 0] if len(df.columns) > 0 else pd.Series()
+                        all_ohlc_data[ticker] = df
                 
-                # Create DataFrame
                 if close_prices:
                     prices_df = pd.DataFrame(close_prices)
-                    prices_df = prices_df.dropna(axis=1, how='all')
-                    
                     if not prices_df.empty:
                         all_prices[market] = prices_df
-                        all_returns[market] = prices_df.pct_change().dropna()
-                        
-                        # Store OHLC data for Supertrend
-                        for ticker, df in ticker_data.items():
-                            if ticker in prices_df.columns and not df.empty:
-                                all_ohlc_data[ticker] = df
     
     progress_bar.progress(1.0)
     progress_bar.empty()
     
     if not all_prices:
-        st.error("❌ No data could be loaded. Please check your tickers and internet connection.")
+        st.error("No data loaded. Please check your selections.")
         st.stop()
     
-    # Combine all prices for portfolio analysis
+    # Combine prices
     combined_prices = pd.concat(all_prices.values(), axis=1).dropna(axis=1, how='all')
     combined_returns = combined_prices.pct_change().dropna()
     
     # Create tabs
-    tabs_list = ["📊 Market Overview", "📈 Technical Analysis", "🎯 Portfolio Optimization", "⚠️ Risk Analytics"]
+    tabs_list = ["Overview", "Technical", "Portfolio", "Risk"]
     if supertrend_params['enabled']:
-        tabs_list.append("🟢 Supertrend Strategy")
+        tabs_list.append("Supertrend")
     
     tabs = st.tabs(tabs_list)
     
-    # ==================== TAB 1: MARKET OVERVIEW ====================
+    # ========== TAB 1: OVERVIEW ==========
     with tabs[0]:
-        st.header("📊 Global Market Performance")
+        st.header("Market Performance")
         
-        # Normalized price chart
-        normalized_prices = combined_prices / combined_prices.iloc[0] * 100
+        # Normalized prices
+        if not combined_prices.empty:
+            normalized = combined_prices / combined_prices.iloc[0] * 100
+            
+            fig = px.line(
+                normalized,
+                title="Normalized Prices (Base 100)",
+                labels={"value": "Price", "variable": "Ticker"}
+            )
+            fig.update_layout(height=500, template='plotly_white')
+            st.plotly_chart(fig, use_container_width=True)
         
-        fig = px.line(
-            normalized_prices,
-            title="Normalized Price Performance (Base 100)",
-            labels={"value": "Normalized Price", "variable": "Ticker", "index": "Date"}
-        )
-        fig.update_layout(height=500, template='plotly_white', hovermode='x unified')
-        st.plotly_chart(fig, use_container_width=True)
-        
-        # Correlation matrix
-        st.subheader("📈 Asset Correlation Heatmap")
+        # Correlation
         if len(combined_prices.columns) > 1:
-            corr_matrix = combined_returns.corr()
+            st.subheader("Correlation Matrix")
+            corr = combined_returns.corr()
             
             fig_corr = px.imshow(
-                corr_matrix,
+                corr,
                 text_auto='.2f',
                 aspect="auto",
                 color_continuous_scale="RdBu",
-                title="Asset Correlation Matrix",
                 zmin=-1, zmax=1
             )
-            fig_corr.update_layout(height=600)
+            fig_corr.update_layout(height=500)
             st.plotly_chart(fig_corr, use_container_width=True)
         
-        # Market summary table
-        st.subheader("📋 Market Summary Statistics")
-        summary_data = []
-        
+        # Summary
+        st.subheader("Summary Statistics")
+        summary = []
         for market, prices in all_prices.items():
             if not prices.empty:
-                returns = prices.pct_change().dropna()
-                avg_return = returns.mean().mean()
-                avg_volatility = returns.std().mean()
-                sharpe = (avg_return / avg_volatility * np.sqrt(252)) if avg_volatility > 0 else 0
-                
-                summary_data.append({
+                rets = prices.pct_change().dropna()
+                summary.append({
                     'Market': market,
                     'Stocks': len(prices.columns),
-                    'Avg Daily Return': f"{avg_return:.4%}",
-                    'Avg Volatility': f"{avg_volatility:.4%}",
-                    'Sharpe Ratio': f"{sharpe:.3f}"
+                    'Avg Return': f"{rets.mean().mean():.4%}",
+                    'Avg Vol': f"{rets.std().mean():.4%}"
                 })
-        
-        if summary_data:
-            st.dataframe(pd.DataFrame(summary_data), use_container_width=True)
+        st.dataframe(pd.DataFrame(summary), use_container_width=True)
     
-    # ==================== TAB 2: TECHNICAL ANALYSIS ====================
+    # ========== TAB 2: TECHNICAL ==========
     with tabs[1]:
-        st.header("📈 Interactive Technical Analysis with TA-Lib")
+        st.header("Technical Analysis")
         
-        col1, col2 = st.columns([2, 1])
-        
-        with col1:
-            # Select ticker for analysis
-            all_tickers_flat = []
-            for market, prices in all_prices.items():
-                for ticker in prices.columns:
-                    all_tickers_flat.append(f"{ticker} ({market})")
+        if all_ohlc_data:
+            all_tickers = list(all_ohlc_data.keys())
+            selected_ticker = st.selectbox("Select Stock", all_tickers)
             
-            selected_asset = st.selectbox("Select Asset for Technical Analysis", all_tickers_flat)
-        
-        with col2:
-            st.subheader("Indicator Settings")
-            indicators = {
-                'sma': st.checkbox("Simple Moving Averages (20/50/200)", value=True),
-                'ema': st.checkbox("Exponential Moving Averages (12/26)", value=False),
-                'rsi': st.checkbox("RSI (14)", value=True),
-                'macd': st.checkbox("MACD", value=True),
-                'bollinger': st.checkbox("Bollinger Bands", value=False),
-                'atr': st.checkbox("ATR (14)", value=False)
-            }
-        
-        if selected_asset:
-            ticker_name = selected_asset.split(" (")[0]
-            
-            # Find the OHLC data for this ticker
-            if ticker_name in all_ohlc_data:
-                ohlc_data = all_ohlc_data[ticker_name]
+            if selected_ticker and selected_ticker in all_ohlc_data:
+                df = all_ohlc_data[selected_ticker]
                 
-                if not ohlc_data.empty and 'Close' in ohlc_data.columns:
-                    # Add indicators
-                    ohlc_with_indicators = add_technical_indicators(ohlc_data, indicators)
+                if not df.empty and 'Close' in df.columns:
+                    # Simple technical indicators
+                    df['SMA_20'] = df['Close'].rolling(20).mean()
+                    df['SMA_50'] = df['Close'].rolling(50).mean()
+                    df['RSI'] = calculate_rsi(df['Close'])
                     
-                    # Create interactive chart
-                    fig = create_candlestick_with_indicators(ohlc_with_indicators, ticker_name, indicators)
+                    # Price chart
+                    fig = go.Figure()
+                    fig.add_trace(go.Scatter(x=df.index, y=df['Close'], name='Close', line=dict(color='blue')))
+                    fig.add_trace(go.Scatter(x=df.index, y=df['SMA_20'], name='SMA 20', line=dict(color='orange')))
+                    fig.add_trace(go.Scatter(x=df.index, y=df['SMA_50'], name='SMA 50', line=dict(color='red')))
+                    
+                    fig.update_layout(
+                        title=f"{selected_ticker} - Price & Indicators",
+                        yaxis_title="Price",
+                        height=500,
+                        template='plotly_white'
+                    )
                     st.plotly_chart(fig, use_container_width=True)
-                else:
-                    st.warning(f"Insufficient data for {ticker_name}")
-            else:
-                st.warning(f"No OHLC data available for {ticker_name}")
+                    
+                    # RSI
+                    fig_rsi = go.Figure()
+                    fig_rsi.add_trace(go.Scatter(x=df.index, y=df['RSI'], name='RSI', line=dict(color='purple')))
+                    fig_rsi.add_hline(y=70, line_dash="dash", line_color="red")
+                    fig_rsi.add_hline(y=30, line_dash="dash", line_color="green")
+                    fig_rsi.update_layout(title="RSI (14)", yaxis_title="RSI", height=300, template='plotly_white')
+                    st.plotly_chart(fig_rsi, use_container_width=True)
     
-    # ==================== TAB 3: PORTFOLIO OPTIMIZATION ====================
+    # ========== TAB 3: PORTFOLIO ==========
     with tabs[2]:
-        st.header("🎯 Portfolio Optimization with PyPortfolioOpt")
+        st.header("Portfolio Optimization")
         
         if len(combined_prices.columns) >= 2:
             from modules.portfolio_optimizer import PortfolioOptimizer
             
             optimizer = PortfolioOptimizer(combined_prices)
-            opt_results = optimizer.create_optimization_dashboard()
+            result = optimizer.optimize_max_sharpe()
             
-            # Efficient frontier
-            st.subheader("📈 Efficient Frontier")
-            ef_points = optimizer.get_efficient_frontier_points()
-            
-            if not ef_points.empty:
-                fig_ef = px.scatter(
-                    ef_points, x='volatility', y='return',
-                    title='Mean-Variance Efficient Frontier',
-                    labels={'volatility': 'Volatility (Risk)', 'return': 'Expected Return'},
-                    color_discrete_sequence=['blue']
-                )
-                fig_ef.update_layout(height=500, template='plotly_white')
-                fig_ef.update_xaxes(tickformat=".2%")
-                fig_ef.update_yaxes(tickformat=".2%")
-                st.plotly_chart(fig_ef, use_container_width=True)
-        else:
-            st.warning("⚠️ Please select at least 2 assets for portfolio optimization")
-    
-    # ==================== TAB 4: RISK ANALYTICS ====================
-    with tabs[3]:
-        st.header("⚠️ Advanced Risk Analytics with QuantStats")
-        
-        if not combined_returns.empty and len(combined_returns.columns) > 0:
-            # Create equal-weight portfolio
-            equal_weight_returns = combined_returns.mean(axis=1)
-            
-            # Get benchmark data
-            benchmark_symbol = "^GSPC"  # Default S&P 500
-            benchmark_data = get_benchmark_data(benchmark_symbol, str(start_date), str(end_date))
-            
-            if not benchmark_data.empty:
-                benchmark_returns = benchmark_data.pct_change().dropna()
-                common_idx = equal_weight_returns.index.intersection(benchmark_returns.index)
-                aligned_returns = equal_weight_returns[common_idx]
-                aligned_benchmark = benchmark_returns[common_idx]
+            if result['status'] == 'success' and result['weights']:
+                col1, col2, col3 = st.columns(3)
+                with col1:
+                    st.metric("Expected Return", f"{result['expected_return']:.2%}")
+                with col2:
+                    st.metric("Volatility", f"{result['volatility']:.2%}")
+                with col3:
+                    st.metric("Sharpe Ratio", f"{result['sharpe_ratio']:.3f}")
                 
-                risk_analyzer = RiskAnalyzer(aligned_returns, aligned_benchmark)
-                metrics = risk_analyzer.display_metrics_dashboard()
+                # Weights chart
+                weights_df = pd.DataFrame.from_dict(result['weights'], orient='index', columns=['Weight'])
+                weights_df = weights_df[weights_df['Weight'] > 0.01].sort_values('Weight', ascending=False)
                 
-                # Rolling metrics
-                st.subheader("📊 Rolling Risk Metrics")
-                rolling_fig = risk_analyzer.create_rolling_metrics_chart()
-                st.plotly_chart(rolling_fig, use_container_width=True)
-                
-                # Drawdown chart
-                st.subheader("📉 Drawdown Analysis")
-                drawdown_fig = risk_analyzer.create_drawdown_chart()
-                st.plotly_chart(drawdown_fig, use_container_width=True)
-                
-                # Monthly returns heatmap
-                st.subheader("📅 Monthly Returns Heatmap")
-                try:
-                    monthly_returns = qs.stats.monthly_returns(aligned_returns)
-                    if not monthly_returns.empty and len(monthly_returns) > 0:
-                        monthly_pivot = monthly_returns.unstack()
-                        
-                        fig_monthly = px.imshow(
-                            monthly_pivot,
-                            text_auto='.2%',
-                            aspect="auto",
-                            color_continuous_scale="RdYlGn",
-                            title="Monthly Returns (%)",
-                            labels={"x": "Month", "y": "Year", "color": "Return"}
-                        )
-                        fig_monthly.update_layout(height=500)
-                        st.plotly_chart(fig_monthly, use_container_width=True)
-                except Exception as e:
-                    st.info(f"Monthly returns heatmap not available: {e}")
+                if not weights_df.empty:
+                    fig = px.bar(weights_df, x=weights_df.index, y='Weight', title="Portfolio Weights")
+                    fig.update_yaxis(tickformat='.0%')
+                    st.plotly_chart(fig, use_container_width=True)
             else:
-                st.warning("Benchmark data not available. Displaying portfolio metrics only.")
-                
-                # Basic metrics without benchmark
-                st.metric("Portfolio Volatility", f"{equal_weight_returns.std() * np.sqrt(252):.2%}")
-                st.metric("Portfolio Sharpe", f"{equal_weight_returns.mean() / equal_weight_returns.std() * np.sqrt(252):.3f}")
+                st.warning("Optimization failed. Try different assets.")
         else:
-            st.warning("⚠️ Insufficient data for risk analysis")
+            st.warning("Select at least 2 assets for optimization")
     
-    # ==================== TAB 5: SUPERTREND STRATEGY ====================
+    # ========== TAB 4: RISK ==========
+    with tabs[3]:
+        st.header("Risk Analytics")
+        
+        if not combined_returns.empty:
+            # Equal weight portfolio
+            portfolio_returns = combined_returns.mean(axis=1)
+            
+            # Metrics
+            total_return = (1 + portfolio_returns).prod() - 1
+            volatility = portfolio_returns.std() * np.sqrt(252)
+            sharpe = (portfolio_returns.mean() / portfolio_returns.std() * np.sqrt(252)) if portfolio_returns.std() != 0 else 0
+            
+            # Drawdown
+            cumulative = (1 + portfolio_returns).cumprod()
+            running_max = cumulative.expanding().max()
+            drawdown = (cumulative - running_max) / running_max
+            max_dd = drawdown.min()
+            
+            col1, col2, col3, col4 = st.columns(4)
+            with col1:
+                st.metric("Total Return", f"{total_return:.2%}")
+            with col2:
+                st.metric("Volatility", f"{volatility:.2%}")
+            with col3:
+                st.metric("Sharpe Ratio", f"{sharpe:.3f}")
+            with col4:
+                st.metric("Max Drawdown", f"{max_dd:.2%}")
+            
+            # Drawdown chart
+            fig_dd = go.Figure()
+            fig_dd.add_trace(go.Scatter(x=drawdown.index, y=drawdown * 100, fill='tozeroy', name='Drawdown'))
+            fig_dd.update_layout(title="Drawdown", yaxis_title="%", height=400, template='plotly_white')
+            st.plotly_chart(fig_dd, use_container_width=True)
+            
+            # Returns distribution
+            fig_dist = px.histogram(portfolio_returns, nbins=50, title="Daily Returns Distribution")
+            fig_dist.update_layout(height=400, template='plotly_white')
+            st.plotly_chart(fig_dist, use_container_width=True)
+    
+    # ========== TAB 5: SUPERTREND ==========
     if supertrend_params['enabled'] and len(tabs) > 4:
         with tabs[4]:
-            st.header("🟢 Supertrend Trading Strategy")
-            st.markdown("""
-            Supertrend indikatörü, trend takibi için geliştirilmiş bir teknik analiz aracıdır.
+            st.header("Supertrend Strategy")
             
-            - **🟢 Buy Signal**: Trend aşağı yönlüden yukarı yönlüye döndüğünde
-            - **🔴 Sell Signal**: Trend yukarı yönlüden aşağı yönlüye döndüğünde
-            - **📊 Strategy Performance**: Backtest sonuçları ve performans metrikleri
-            """)
+            from modules.supertrend_signals import SupertrendAnalyzer
             
-            from modules.supertrend_signals import SupertrendAnalyzer, scan_multiple_stocks
-            
-            if supertrend_params['scan_all'] and all_ohlc_data:
-                # Multi-stock scanner
-                st.subheader("📊 Multi-Stock Supertrend Scanner")
+            if all_ohlc_data:
+                all_tickers = list(all_ohlc_data.keys())
+                selected = st.selectbox("Select Stock", all_tickers, key="st_selector")
                 
-                all_tickers_list = list(all_ohlc_data.keys())
-                
-                with st.spinner(f"Scanning {len(all_tickers_list)} stocks..."):
-                    scan_results = scan_multiple_stocks(
-                        all_tickers_list,
-                        all_ohlc_data,
-                        period=supertrend_params['period'],
-                        multiplier=supertrend_params['multiplier']
-                    )
-                
-                if not scan_results.empty:
-                    # Display results with styling
-                    st.dataframe(
-                        scan_results,
-                        use_container_width=True,
-                        hide_index=True
-                    )
+                if selected and selected in all_ohlc_data:
+                    df = all_ohlc_data[selected]
                     
-                    # Summary statistics
-                    col1, col2, col3 = st.columns(3)
-                    with col1:
-                        buy_signals = len(scan_results[scan_results['Action'].str.contains('BUY', na=False)])
-                        st.metric("🚀 Buy Signals", buy_signals)
-                    with col2:
-                        sell_signals = len(scan_results[scan_results['Action'].str.contains('SELL', na=False)])
-                        st.metric("📉 Sell Signals", sell_signals)
-                    with col3:
-                        hold_signals = len(scan_results[~scan_results['Action'].str.contains('BUY|SELL', na=False)])
-                        st.metric("⏸️ Hold/Avoid", hold_signals)
-                    
-                    # Download button
-                    csv = scan_results.to_csv(index=False).encode('utf-8')
-                    st.download_button(
-                        label="📥 Download Scanner Results",
-                        data=csv,
-                        file_name=f"supertrend_scan_{datetime.now().strftime('%Y%m%d_%H%M')}.csv",
-                        mime='text/csv'
-                    )
-                else:
-                    st.info("No scan results available. Please check your data.")
-            
-            # Individual stock analysis
-            st.subheader("🔍 Individual Stock Analysis")
-            
-            # Select stock for detailed analysis
-            all_tickers_detailed = list(all_ohlc_data.keys())
-            
-            if all_tickers_detailed:
-                selected_stock_supertrend = st.selectbox(
-                    "Select Stock for Supertrend Analysis",
-                    all_tickers_detailed,
-                    key="supertrend_selector"
-                )
-                
-                if selected_stock_supertrend and selected_stock_supertrend in all_ohlc_data:
-                    ohlc_data = all_ohlc_data[selected_stock_supertrend]
-                    
-                    if not ohlc_data.empty and len(ohlc_data) > supertrend_params['period']:
-                        # Analyze with Supertrend
+                    if len(df) > supertrend_params['period']:
                         analyzer = SupertrendAnalyzer(
                             period=supertrend_params['period'],
                             multiplier=supertrend_params['multiplier']
                         )
+                        signals = analyzer.generate_signals(df)
                         
-                        signals = analyzer.generate_signals(ohlc_data)
-                        
-                        # Display current status
+                        # Current status
                         current_trend = signals['Trend'].iloc[-1]
                         current_price = signals['Close'].iloc[-1]
-                        current_supertrend = signals['Supertrend'].iloc[-1]
                         
-                        # Current status cards
-                        col1, col2, col3, col4 = st.columns(4)
-                        
+                        col1, col2, col3 = st.columns(3)
                         with col1:
-                            trend_text = "🟢 UPTREND" if current_trend == 1 else "🔴 DOWNTREND"
-                            st.metric("Current Trend", trend_text)
-                        
+                            trend_text = "UPTREND" if current_trend == 1 else "DOWNTREND"
+                            st.metric("Trend", trend_text)
                         with col2:
                             st.metric("Current Price", f"{current_price:.2f}")
-                        
                         with col3:
-                            if current_trend == 1:
-                                distance = ((current_price - current_supertrend) / current_supertrend * 100)
-                                st.metric("Distance to Supertrend", f"{distance:.2f}% (Above)")
-                            else:
-                                distance = ((current_supertrend - current_price) / current_supertrend * 100)
-                                st.metric("Distance to Supertrend", f"{distance:.2f}% (Below)")
+                            last_signal = signals[signals['Signal'] != 0]
+                            if not last_signal.empty:
+                                sig = last_signal.iloc[-1]['Signal']
+                                signal_text = "BUY" if sig == 1 else "SELL"
+                                st.metric("Last Signal", signal_text)
                         
-                        with col4:
-                            last_signals = signals[signals['Signal'] != 0]
-                            if not last_signals.empty:
-                                last_signal = last_signals.iloc[-1]
-                                signal_type = "BUY" if last_signal['Signal'] == 1 else "SELL"
-                                signal_color = "🟢" if last_signal['Signal'] == 1 else "🔴"
-                                st.metric("Last Signal", f"{signal_color} {signal_type}")
-                            else:
-                                st.metric("Last Signal", "No Signal")
-                        
-                        # Interactive chart
-                        st.subheader("📈 Supertrend Strategy Chart")
-                        fig = analyzer.create_signal_chart(f"{selected_stock_supertrend} - Supertrend Analysis")
+                        # Chart
+                        fig = analyzer.create_signal_chart(f"{selected}")
                         st.plotly_chart(fig, use_container_width=True)
                         
-                        # Performance dashboard
+                        # Performance
                         analyzer.create_performance_dashboard()
-                        
-                        # Strategy explanation
-                        with st.expander("ℹ️ Supertrend Strategy Explained"):
-                            st.markdown(f"""
-                            **Current Strategy Parameters:**
-                            - ATR Period: {supertrend_params['period']}
-                            - ATR Multiplier: {supertrend_params['multiplier']}
-                            
-                            **How Supertrend Works:**
-                            
-                            1. **ATR (Average True Range)** hesaplanır - piyasa volatilitesini ölçer
-                            2. **Basic Upper/Lower Bands** oluşturulur: (High+Low)/2 ± (multiplier × ATR)
-                            3. **Final Bands** önceki değerlerle karşılaştırılarak belirlenir
-                            4. **Trend Direction**: 
-                               - Fiyat Final Upper Band'ı kırarsa → DOWNTREND
-                               - Fiyat Final Lower Band'ı kırarsa → UPTREND
-                            
-                            **Signal Generation:**
-                            - **BUY**: Trend DOWNTREND'den UPTREND'e döndüğünde
-                            - **SELL**: Trend UPTREND'den DOWNTREND'e döndüğünde
-                            
-                            **Best Practices:**
-                            - Düşük multiplier (2.0-2.5): Daha fazla sinyal, daha duyarlı
-                            - Yüksek multiplier (3.0-4.0): Daha az sinyal, daha güvenilir
-                            - Günlük grafiklerde period 7-10 arası idealdir
-                            - Stop-loss için Supertrend seviyesi kullanılabilir
-                            """)
                     else:
-                        st.warning(f"Insufficient data for {selected_stock_supertrend}. Need at least {supertrend_params['period']} days.")
-            else:
-                st.info("No stock data available for Supertrend analysis.")
+                        st.warning(f"Insufficient data. Need at least {supertrend_params['period']} days.")
 
 else:
     # Welcome screen
-    st.info("👈 Please configure your market and stock selections in the sidebar, then click 'Run Analysis'")
+    st.info("Select markets and stocks from the sidebar, then click 'Run Analysis'")
     
-    # Feature showcase
     col1, col2, col3 = st.columns(3)
-    
     with col1:
-        st.subheader("🌍 Global Coverage")
-        st.markdown("""
-        - 🇹🇷 Turkish BIST 100
-        - 🇺🇸 US S&P 500, NASDAQ
-        - 🇪🇺 European Markets (DAX, CAC, FTSE MIB, SMI)
-        - 🇯🇵 Asian Markets (Nikkei)
-        - 🇦🇺 Australian ASX
-        """)
-    
+        st.subheader("Global Coverage")
+        st.markdown("- Turkey\n- USA\n- Europe\n- Asia\n- Australia")
     with col2:
-        st.subheader("📊 Advanced Analytics")
-        st.markdown("""
-        - 🎯 PyPortfolioOpt Optimization
-        - ⚠️ QuantStats Risk Metrics
-        - 📈 TA-Lib Technical Indicators
-        - 🕯️ Interactive OHLC Charts
-        - 🟢 Supertrend Trading Strategy
-        """)
-    
+        st.subheader("Features")
+        st.markdown("- Portfolio Optimization\n- Risk Analytics\n- Technical Indicators\n- Supertrend Strategy")
     with col3:
-        st.subheader("🎯 Professional Features")
-        st.markdown("""
-        - 🔄 Multi-Market Correlation
-        - 📉 Efficient Frontier
-        - 📊 Rolling Risk Metrics
-        - 💰 Drawdown Analysis
-        - 📥 Export Reports
-        """)
-    
-    # Sample chart placeholder
-    st.markdown("---")
-    st.subheader("📈 Platform Preview")
-    st.markdown("""
-    *Select markets and stocks from the sidebar to see interactive charts and analysis.*
-    
-    **Supported Features:**
-    - Real-time data from Yahoo Finance
-    - 25+ technical indicators via TA-Lib
-    - Portfolio optimization with PyPortfolioOpt
-    - Professional risk metrics with QuantStats
-    - Supertrend buy/sell signal generation
-    """)
+        st.subheader("Analysis")
+        st.markdown("- Correlation Matrix\n- Drawdown Analysis\n- Performance Metrics\n- Signal Generation")
+
+
+# Helper function
+def calculate_rsi(prices, period=14):
+    """Calculate RSI without TA-Lib"""
+    delta = prices.diff()
+    gain = (delta.where(delta > 0, 0)).rolling(window=period).mean()
+    loss = (-delta.where(delta < 0, 0)).rolling(window=period).mean()
+    rs = gain / loss
+    rsi = 100 - (100 / (1 + rs))
+    return rsi
