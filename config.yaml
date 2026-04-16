@@ -1,62 +1,36 @@
 indices:
-  Turkey:
-    name: "BIST 100"
-    currency: "TRY"
-    market: "turkish"
-    tickers: ["THYAO", "GARAN", "AKBNK", "YKBNK", "ASELS", "KCHOL", "SISE", "PGSUS", "TOASO", "EREGL"]
-    benchmark: "^XU100"
-    
   USA:
-    name: "S&P 500"
+    name: "US Stocks"
     currency: "USD"
-    market: "us"
-    tickers: ["AAPL", "MSFT", "GOOGL", "AMZN", "NVDA", "META", "TSLA", "JPM", "V", "JNJ"]
+    tickers: ["AAPL", "MSFT", "GOOGL", "AMZN", "META", "TSLA", "NVDA", "JPM", "V", "JNJ"]
     benchmark: "^GSPC"
     
+  Turkey:
+    name: "Turkish Stocks"
+    currency: "TRY"
+    tickers: ["THYAO.IS", "GARAN.IS", "AKBNK.IS", "YKBNK.IS", "ASELS.IS", "KCHOL.IS", "SISE.IS"]
+    benchmark: "^XU100"
+    
   Germany:
-    name: "DAX 40"
+    name: "German Stocks"
     currency: "EUR"
-    market: "german"
-    tickers: ["SAP.DE", "SIE.DE", "ALV.DE", "DTE.DE", "MRK.DE", "BAS.DE", "BAYN.DE", "DBK.DE"]
+    tickers: ["SAP.DE", "SIE.DE", "ALV.DE", "DTE.DE", "MRK.DE", "BAS.DE"]
     benchmark: "^GDAXI"
     
   France:
-    name: "CAC 40"
+    name: "French Stocks"
     currency: "EUR"
-    market: "french"
-    tickers: ["MC.PA", "TTE.PA", "SAN.PA", "BNP.PA", "OR.PA", "AIR.PA", "SU.PA", "DANO.PA"]
+    tickers: ["MC.PA", "TTE.PA", "SAN.PA", "BNP.PA", "OR.PA", "AIR.PA"]
     benchmark: "^FCHI"
     
-  Italy:
-    name: "FTSE MIB"
-    currency: "EUR"
-    market: "italian"
-    tickers: ["ENEL.MI", "ENI.MI", "UCG.MI", "ISP.MI", "STLAM.MI", "TIT.MI", "MB.MI"]
-    benchmark: "FTSEMIB.MI"
-    
-  Switzerland:
-    name: "SMI"
-    currency: "CHF"
-    market: "swiss"
-    tickers: ["NESN.SW", "NOVN.SW", "ROG.SW", "UBSG.SW", "ABBN.SW", "CFR.SW", "SCMN.SW"]
-    benchmark: "^SSMI"
-    
   Japan:
-    name: "Nikkei 225"
+    name: "Japanese Stocks"
     currency: "JPY"
-    market: "japanese"
-    tickers: ["7203.T", "9984.T", "6758.T", "9432.T", "6861.T", "4063.T", "8306.T"]
+    tickers: ["7203.T", "9984.T", "6758.T", "9432.T", "6861.T"]
     benchmark: "^N225"
     
   Australia:
-    name: "ASX 200"
+    name: "Australian Stocks"
     currency: "AUD"
-    market: "australian"
-    tickers: ["CBA.AX", "BHP.AX", "CSL.AX", "WBC.AX", "NAB.AX", "ANZ.AX", "WES.AX"]
+    tickers: ["CBA.AX", "BHP.AX", "CSL.AX", "WBC.AX", "NAB.AX"]
     benchmark: "^AXJO"
-
-# Global settings
-settings:
-  default_period_days: 730  # 2 years
-  risk_free_rate: 0.02  # 2%
-  trading_days_per_year: 252
